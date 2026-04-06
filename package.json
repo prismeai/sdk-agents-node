@@ -1,6 +1,6 @@
 {
   "name": "@prisme.ai/sdk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Official Prisme.ai Node.js SDK for Agent Factory and Storage APIs",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -40,6 +40,10 @@
     "agent",
     "llm"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prismeai/sdk-node"
+  },
   "author": "Prisme.ai",
   "license": "MIT",
   "devDependencies": {
