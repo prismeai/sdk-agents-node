@@ -9,11 +9,7 @@ import { Profiles } from './resources/profiles/index.js';
 import { Orgs } from './resources/orgs/index.js';
 import { Storage } from './resources/storage/index.js';
 
-const ENVIRONMENTS: Record<string, string> = {
-  sandbox: 'https://api.sandbox.prisme.ai/v2',
-  production: 'https://api.prisme.ai/v2',
-  prod: 'https://api.prisme.ai/v2',
-};
+const DEFAULT_BASE_URL = 'https://api.prisme.ai/v2';
 
 const AGENT_FACTORY_SLUG = 'agent-factory';
 const STORAGE_SLUG = 'storage';
@@ -23,9 +19,7 @@ export interface PrismeAIOptions {
   apiKey?: string;
   /** Bearer token for authentication. Uses Authorization header. */
   bearerToken?: string;
-  /** Environment name ('sandbox', 'production') or custom base URL. */
-  environment?: string;
-  /** Custom base URL. Overrides environment. */
+  /** API base URL. Defaults to https://api.prisme.ai/v2. Override for self-hosted instances. */
   baseURL?: string;
   /** Request timeout in milliseconds. Default: 60000. */
   timeout?: number;
@@ -40,7 +34,6 @@ export interface PrismeAIOptions {
  * ```typescript
  * const client = new PrismeAI({
  *   apiKey: 'sk-...',
- *   environment: 'sandbox',
  * });
  *
  * // List agents
@@ -100,17 +93,7 @@ export class PrismeAI {
 }
 
 function resolveBaseURL(options: PrismeAIOptions): string {
-  if (options.baseURL) return options.baseURL;
-  if (options.environment) {
-    const env = ENVIRONMENTS[options.environment];
-    if (env) return env;
-    // Treat as custom URL if not a known environment name
-    if (options.environment.startsWith('http')) return options.environment;
-    throw new Error(
-      `Unknown environment: "${options.environment}". Use "sandbox", "production", or provide a baseURL.`,
-    );
-  }
-  return ENVIRONMENTS.production;
+  return options.baseURL ?? DEFAULT_BASE_URL;
 }
 
 function buildAuthHeaders(options: PrismeAIOptions): Record<string, string> {

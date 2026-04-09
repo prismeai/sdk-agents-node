@@ -15,13 +15,10 @@ import { PrismeAI } from '@prisme.ai/sdk-agents';
 
 const client = new PrismeAI({
   apiKey: process.env.PRISMEAI_API_KEY,
-  environment: 'production', // or 'sandbox'
 });
 ```
 
 ## Authentication
-
-The SDK supports two authentication methods:
 
 ```typescript
 // API Key (recommended for server-side)
@@ -29,6 +26,12 @@ const client = new PrismeAI({ apiKey: 'sk-...' });
 
 // Bearer Token (for user-scoped access)
 const client = new PrismeAI({ bearerToken: 'eyJ...' });
+
+// Self-hosted instance
+const client = new PrismeAI({
+  apiKey: 'sk-...',
+  baseURL: 'https://api.your-instance.com/v2',
+});
 ```
 
 Environment variables `PRISMEAI_API_KEY` and `PRISMEAI_BEARER_TOKEN` are also supported.
@@ -59,6 +62,11 @@ await client.agents.delete(agent.id);
 // Publish / discard draft
 await client.agents.publish(agent.id);
 await client.agents.discardDraft(agent.id);
+
+// Discover public agents
+for await (const agent of client.agents.discovery()) {
+  console.log(agent.name);
+}
 ```
 
 ### Messages
@@ -70,7 +78,7 @@ const response = await client.agents.messages.send('agent-id', {
     parts: [{ text: 'Hello, how are you?' }],
   },
 });
-console.log(response);
+console.log(response.output);
 
 // Stream a message (SSE)
 const stream = await client.agents.messages.stream('agent-id', {
@@ -79,16 +87,29 @@ const stream = await client.agents.messages.stream('agent-id', {
   },
 });
 for await (const event of stream) {
-  if (event.text) {
-    process.stdout.write(event.text);
+  if (event.event === 'task.output.delta') {
+    const text = event.data.delta.parts.map(p => p.text).join('');
+    process.stdout.write(text);
   }
 }
+
+// Send with file attachments
+const response = await client.agents.messages.send('agent-id', {
+  message: {
+    parts: [{ text: 'Describe this image' }],
+  },
+  files: [
+    { url: 'https://example.com/image.png' },
+    { path: './local-file.pdf' },
+    { data: Buffer.from('...'), filename: 'doc.txt', mimeType: 'text/plain' },
+  ],
+});
 ```
 
 ### Tools
 
 ```typescript
-// Add a tool to an agent
+// Create a tool for an agent
 const tool = await client.agents.tools.create('agent-id', {
   type: 'function',
   name: 'get_weather',
@@ -112,27 +133,34 @@ await client.agents.tools.delete('agent-id', tool.id);
 ### Conversations
 
 ```typescript
-// List conversations
-for await (const conv of client.agents.conversations.list()) {
+// List conversations for an agent
+for await (const conv of client.agents.conversations.list('agent-id')) {
   console.log(conv.id, conv.title);
 }
 
-// Create and manage
-const conv = await client.agents.conversations.create({ agentId: 'agent-id' });
-await client.agents.conversations.update(conv.id, { title: 'New Title' });
+// Create a conversation
+const conv = await client.agents.conversations.create('agent-id');
+
+// Send message in a conversation context
+const response = await client.agents.messages.send('agent-id', {
+  message: {
+    parts: [{ text: 'Hello!' }],
+    contextId: conv.id,
+  },
+});
 ```
 
 ### A2A (Agent-to-Agent)
 
 ```typescript
-// Send a message to another agent
+// Send a message via A2A protocol (JSON-RPC 2.0)
 const result = await client.agents.a2a.send('target-agent-id', {
-  message: 'Perform this task',
+  message: { parts: [{ text: 'Perform this task' }] },
 });
 
 // Stream A2A response
 const a2aStream = await client.agents.a2a.sendSubscribe('target-agent-id', {
-  message: 'Perform this task',
+  message: { parts: [{ text: 'Perform this task' }] },
 });
 for await (const event of a2aStream) {
   console.log(event);
@@ -140,6 +168,19 @@ for await (const event of a2aStream) {
 
 // Get agent card
 const card = await client.agents.a2a.getCard('agent-id');
+```
+
+### Tasks
+
+```typescript
+// List tasks for an agent
+for await (const task of client.tasks.list('agent-id')) {
+  console.log(task.id, task.status);
+}
+
+// Get / cancel a task
+const task = await client.tasks.get('agent-id', 'task-id');
+await client.tasks.cancel('agent-id', 'task-id');
 ```
 
 ### Files (Storage)
@@ -180,17 +221,6 @@ await client.storage.vectorStores.files.add(vs.id, { fileId: 'file-id' });
 for await (const file of client.storage.vectorStores.files.list(vs.id)) {
   console.log(file.name, file.status);
 }
-```
-
-### Tasks
-
-```typescript
-for await (const task of client.tasks.list({ status: 'running' })) {
-  console.log(task.id, task.status);
-}
-
-const task = await client.tasks.get('task-id');
-await client.tasks.cancel('task-id');
 ```
 
 ### Pagination
@@ -244,8 +274,7 @@ try {
 |--------|------|---------|-------------|
 | `apiKey` | `string` | `PRISMEAI_API_KEY` env | API key for authentication |
 | `bearerToken` | `string` | `PRISMEAI_BEARER_TOKEN` env | Bearer token for auth |
-| `environment` | `string` | `'production'` | `'sandbox'` or `'production'` |
-| `baseURL` | `string` | — | Custom API base URL (overrides environment) |
+| `baseURL` | `string` | `https://api.prisme.ai/v2` | API base URL (for self-hosted) |
 | `timeout` | `number` | `60000` | Request timeout in ms |
 | `maxRetries` | `number` | `2` | Max retries on 429/5xx |
 

@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { PrismeAI } from '../src/client.js';
 
 describe('PrismeAI client', () => {
-  it('creates a client with sandbox environment', () => {
+  it('creates a client with default base URL', () => {
     const client = new PrismeAI({
       apiKey: 'test-key',
-      environment: 'sandbox',
-      agentFactoryWorkspaceId: 'ws-123',
     });
 
     expect(client).toBeDefined();
@@ -25,59 +23,24 @@ describe('PrismeAI client', () => {
     expect(client.storage.stats).toBeDefined();
   });
 
-  it('creates a client with production environment', () => {
-    const client = new PrismeAI({
-      apiKey: 'test-key',
-      environment: 'production',
-      agentFactoryWorkspaceId: 'ws-123',
-    });
-    expect(client).toBeDefined();
-  });
-
   it('creates a client with custom baseURL', () => {
     const client = new PrismeAI({
       apiKey: 'test-key',
-      baseURL: 'https://custom.api.example.com',
-      agentFactoryWorkspaceId: 'ws-123',
+      baseURL: 'https://api.my-instance.com/v2',
     });
     expect(client).toBeDefined();
-  });
-
-  it('creates a client with separate storage workspace', () => {
-    const client = new PrismeAI({
-      apiKey: 'test-key',
-      environment: 'sandbox',
-      agentFactoryWorkspaceId: 'ws-af',
-      storageWorkspaceId: 'ws-storage',
-    });
-    expect(client.storage).toBeDefined();
-    expect(client.storage.files).toBeDefined();
   });
 
   it('creates a client with bearer token', () => {
     const client = new PrismeAI({
       bearerToken: 'my-jwt-token',
-      environment: 'sandbox',
-      agentFactoryWorkspaceId: 'ws-123',
     });
     expect(client).toBeDefined();
-  });
-
-  it('throws on unknown environment', () => {
-    expect(() => {
-      new PrismeAI({
-        apiKey: 'test-key',
-        environment: 'invalid-env',
-        agentFactoryWorkspaceId: 'ws-123',
-      });
-    }).toThrow('Unknown environment');
   });
 
   it('agents has all sub-resources', () => {
     const client = new PrismeAI({
       apiKey: 'test-key',
-      environment: 'sandbox',
-      agentFactoryWorkspaceId: 'ws-123',
     });
 
     expect(client.agents.messages).toBeDefined();
@@ -92,9 +55,6 @@ describe('PrismeAI client', () => {
   it('storage has all sub-resources', () => {
     const client = new PrismeAI({
       apiKey: 'test-key',
-      environment: 'sandbox',
-      agentFactoryWorkspaceId: 'ws-123',
-      storageWorkspaceId: 'ws-storage',
     });
 
     expect(client.storage.files).toBeDefined();
