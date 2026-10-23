@@ -200,7 +200,7 @@ const response = await client.storage.files.download(file.id);
 const bytes = Buffer.from(await response.arrayBuffer());
 ```
 
-`files.list` and `files.delete` require edit rights on the storage workspace. To remove an indexed file, delete its document from the knowledge base.
+`files.delete` deletes a file you uploaded that no document uses; it answers 409 while a document does. To remove an indexed file, delete its document from the knowledge base. `files.list` requires edit rights on the storage workspace.
 
 ### Knowledge Bases (Storage)
 

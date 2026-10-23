@@ -55,9 +55,12 @@ export class Files extends BaseResource {
     return this._get<FileObject>(this.path(fileId));
   }
 
-  /** Delete a file. Requires management rights on the storage workspace. */
+  /**
+   * Delete a file you uploaded that no document uses (409 while one does: delete the document
+   * from its knowledge base instead, which also releases the file).
+   */
   delete(fileId: string): Promise<void> {
-    return this._del<void>(this.path(fileId));
+    return this._del<void>(this.buildPath(this.workspaceId, 'files', fileId));
   }
 
   /** Download a file's content. Returns the raw Response for streaming. */
