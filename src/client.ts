@@ -61,7 +61,7 @@ export class PrismeAI {
   readonly profiles: Profiles;
   readonly orgs: Orgs;
 
-  /** Storage resources (files, vector stores, skills, stats). */
+  /** Storage resources (files, knowledge bases, skills, stats). */
   readonly storage: Storage;
 
   private readonly httpClient: HttpClient;

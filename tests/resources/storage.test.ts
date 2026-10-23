@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Files } from '../../src/resources/storage/files.js';
 import { Skills } from '../../src/resources/storage/skills.js';
 import { Stats } from '../../src/resources/storage/stats.js';
-import { VectorStores } from '../../src/resources/storage/vector-stores/index.js';
-import { VSFiles } from '../../src/resources/storage/vector-stores/files.js';
-import { VSAccess } from '../../src/resources/storage/vector-stores/access.js';
+import { KnowledgeBases } from '../../src/resources/storage/knowledge-bases/index.js';
+import { KBDocuments } from '../../src/resources/storage/knowledge-bases/documents.js';
+import { KBAccess } from '../../src/resources/storage/knowledge-bases/access.js';
+import { KBWebSources } from '../../src/resources/storage/knowledge-bases/web-sources.js';
 import { Storage } from '../../src/resources/storage/index.js';
+import { PrismeAIError } from '../../src/core/errors.js';
 import type { HttpClient } from '../../src/core/http-client.js';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +37,8 @@ function createMockHttpClient() {
 
 const WS_ID = 'ws-storage';
 const PREFIX = `/workspaces/slug:${WS_ID}/webhooks/v1`;
+const KB = `${PREFIX}/knowledge_bases`;
+const FILES = `/workspaces/slug:${WS_ID}/files`;
 
 // ---------------------------------------------------------------------------
 // Storage (container)
@@ -46,14 +50,14 @@ describe('Storage', () => {
     const storage = new Storage(http, WS_ID);
 
     expect(storage.files).toBeInstanceOf(Files);
-    expect(storage.vectorStores).toBeInstanceOf(VectorStores);
+    expect(storage.knowledgeBases).toBeInstanceOf(KnowledgeBases);
     expect(storage.skills).toBeInstanceOf(Skills);
     expect(storage.stats).toBeInstanceOf(Stats);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Files
+// Files (native files API)
 // ---------------------------------------------------------------------------
 
 describe('Files', () => {
@@ -66,99 +70,94 @@ describe('Files', () => {
   });
 
   describe('list', () => {
-    it('returns a PageIterator', () => {
-      const iter = files.list();
-      expect(iter).toBeDefined();
-      expect(typeof iter.toArray).toBe('function');
-    });
+    it('pages through bare-array responses until a short page', async () => {
+      const fullPage = Array.from({ length: 20 }, (_, i) => ({ id: `f${i}` }));
+      http.request
+        .mockResolvedValueOnce(fullPage)
+        .mockResolvedValueOnce([{ id: 'f20' }]);
 
-    it('accepts optional params', () => {
-      const iter = files.list({ page: 1, limit: 10 } as any);
-      expect(iter).toBeDefined();
+      const items = await files.list({ 'metadata.type': 'source' }).toArray();
+
+      expect(items).toHaveLength(21);
+      expect(http.request).toHaveBeenCalledTimes(2);
+      expect(http.request.mock.calls[0][0]).toMatchObject({
+        method: 'GET',
+        path: FILES,
+        query: { 'metadata.type': 'source', page: 1, limit: 20 },
+      });
+      expect(http.request.mock.calls[1][0].query.page).toBe(2);
     });
   });
 
   describe('upload', () => {
-    it('creates FormData from Buffer and posts', async () => {
-      http.post.mockResolvedValueOnce({ id: 'f1', name: 'test.txt' });
+    it('posts a private multipart upload and returns the first file', async () => {
+      http.post.mockResolvedValueOnce([{ id: 'f1', name: 'test.txt' }]);
 
-      const buf = Buffer.from('hello');
-      const result = await files.upload(buf, { filename: 'test.txt' });
+      const result = await files.upload(Buffer.from('hello'), {
+        filename: 'test.txt',
+        metadata: { key: 'value' },
+      });
 
       expect(http.post).toHaveBeenCalledTimes(1);
       const [path, body] = http.post.mock.calls[0];
-      expect(path).toBe(`${PREFIX}/files`);
-      expect(body).toBeInstanceOf(FormData);
+      expect(path).toBe(FILES);
+      const fd = body as FormData;
+      expect(fd.get('file')).toBeInstanceOf(Blob);
+      expect((fd.get('file') as File).type).toBe('text/plain');
+      expect(fd.get('public')).toBe('false');
+      expect(fd.get('metadata')).toBe(JSON.stringify({ key: 'value' }));
+      expect(fd.has('shareToken')).toBe(false);
+      expect(fd.has('expiresAfter')).toBe(false);
       expect(result).toEqual({ id: 'f1', name: 'test.txt' });
     });
 
-    it('appends name and metadata to FormData when provided', async () => {
-      http.post.mockResolvedValueOnce({ id: 'f2' });
+    it('works without params', async () => {
+      http.post.mockResolvedValueOnce([{ id: 'f2' }]);
 
-      const buf = Buffer.from('data');
-      await files.upload(buf, {
-        filename: 'data.json',
-        name: 'my-data',
-        metadata: { key: 'value' },
-      } as any);
+      await files.upload(Buffer.from('data'));
 
-      expect(http.post).toHaveBeenCalledTimes(1);
-      const [, body] = http.post.mock.calls[0];
-      const fd = body as FormData;
-      expect(fd.get('name')).toBe('my-data');
-      expect(fd.get('metadata')).toBe(JSON.stringify({ key: 'value' }));
+      const fd = http.post.mock.calls[0][1] as FormData;
+      expect(fd.has('metadata')).toBe(false);
     });
 
-    it('uses params.name as fallback filename', async () => {
-      http.post.mockResolvedValueOnce({ id: 'f3' });
+    it('throws when the upload returns no file', async () => {
+      http.post.mockResolvedValueOnce([]);
 
-      const buf = Buffer.from('data');
-      await files.upload(buf, { name: 'doc.pdf' } as any);
-
-      expect(http.post).toHaveBeenCalledTimes(1);
-    });
-
-    it('works without params (uses defaults)', async () => {
-      http.post.mockResolvedValueOnce({ id: 'f4' });
-
-      const buf = Buffer.from('data');
-      await files.upload(buf);
-
-      expect(http.post).toHaveBeenCalledTimes(1);
+      await expect(files.upload(Buffer.from('data'))).rejects.toBeInstanceOf(PrismeAIError);
     });
   });
 
   describe('get', () => {
-    it('calls GET on specific file path', async () => {
-      http.get.mockResolvedValueOnce({ id: 'f1', name: 'file.txt' });
+    it('calls GET on the file path', async () => {
+      http.get.mockResolvedValueOnce({ id: 'f1' });
 
       const result = await files.get('f1');
 
-      expect(http.get).toHaveBeenCalledWith(`${PREFIX}/files/f1`);
-      expect(result).toEqual({ id: 'f1', name: 'file.txt' });
+      expect(http.get).toHaveBeenCalledWith(`${FILES}/f1`, undefined);
+      expect(result).toEqual({ id: 'f1' });
     });
   });
 
   describe('delete', () => {
-    it('calls DELETE on specific file path', async () => {
-      http.delete.mockResolvedValueOnce(undefined);
-
+    it('calls DELETE on the file path', async () => {
       await files.delete('f1');
 
-      expect(http.delete).toHaveBeenCalledWith(`${PREFIX}/files/f1`, undefined);
+      expect(http.delete).toHaveBeenCalledWith(`${FILES}/f1`, undefined);
     });
   });
 
   describe('download', () => {
-    it('calls requestRaw with GET on download path', async () => {
+    it('fetches the bytes route of the file storage path', async () => {
+      http.get.mockResolvedValueOnce({ id: 'f1', path: `${WS_ID}/f1.my report#1.pdf`, url: 'https://elsewhere/x' });
       const mockResp = new Response('file content');
       http.requestRaw.mockResolvedValueOnce(mockResp);
 
       const result = await files.download('f1');
 
+      expect(http.get).toHaveBeenCalledWith(`${FILES}/f1`, undefined);
       expect(http.requestRaw).toHaveBeenCalledWith({
         method: 'GET',
-        path: `${PREFIX}/files/f1/content`,
+        path: `/files/${WS_ID}/f1.my%20report%231.pdf`,
       });
       expect(result).toBe(mockResp);
     });
@@ -267,286 +266,256 @@ describe('Stats', () => {
 });
 
 // ---------------------------------------------------------------------------
-// VectorStores
+// KnowledgeBases
 // ---------------------------------------------------------------------------
 
-describe('VectorStores', () => {
+describe('KnowledgeBases', () => {
   let http: ReturnType<typeof createMockHttpClient>;
-  let vectorStores: VectorStores;
+  let kbs: KnowledgeBases;
 
   beforeEach(() => {
     http = createMockHttpClient();
-    vectorStores = new VectorStores(http, WS_ID);
+    kbs = new KnowledgeBases(http, WS_ID);
   });
 
-  describe('sub-resources', () => {
-    it('has files sub-resource', () => {
-      expect(vectorStores.files).toBeInstanceOf(VSFiles);
-    });
-
-    it('has access sub-resource', () => {
-      expect(vectorStores.access).toBeInstanceOf(VSAccess);
-    });
+  it('has documents, access and webSources sub-resources', () => {
+    expect(kbs.documents).toBeInstanceOf(KBDocuments);
+    expect(kbs.access).toBeInstanceOf(KBAccess);
+    expect(kbs.webSources).toBeInstanceOf(KBWebSources);
   });
 
   describe('list', () => {
-    it('returns a PageIterator', () => {
-      const iter = vectorStores.list();
-      expect(iter).toBeDefined();
+    it('reads the list envelope and stops on the last page', async () => {
+      http.request.mockResolvedValueOnce({
+        object: 'list',
+        data: [{ id: 'vs_1' }, { id: 'vs_2' }],
+        total: 2,
+        page: 1,
+        limit: 20,
+        has_more: false,
+      });
+
+      const items = await kbs.list({ search: 'docs' }).toArray();
+
+      expect(items).toEqual([{ id: 'vs_1' }, { id: 'vs_2' }]);
+      expect(http.request).toHaveBeenCalledTimes(1);
+      expect(http.request.mock.calls[0][0]).toMatchObject({
+        method: 'GET',
+        path: KB,
+        query: { search: 'docs', page: 1, limit: 20 },
+      });
     });
   });
 
-  describe('create', () => {
-    it('calls POST on vector-stores path', async () => {
-      const params = { name: 'My VS' };
-      http.post.mockResolvedValueOnce({ id: 'vs1' });
+  it('create calls POST', async () => {
+    const params = { name: 'My KB' };
+    http.post.mockResolvedValueOnce({ id: 'vs_1' });
 
-      const result = await vectorStores.create(params as any);
+    const result = await kbs.create(params);
 
-      expect(http.post).toHaveBeenCalledWith(`${PREFIX}/vector_stores`, params, undefined);
-      expect(result).toEqual({ id: 'vs1' });
-    });
+    expect(http.post).toHaveBeenCalledWith(KB, params, undefined);
+    expect(result).toEqual({ id: 'vs_1' });
   });
 
-  describe('get', () => {
-    it('calls GET on specific vector store path', async () => {
-      http.get.mockResolvedValueOnce({ id: 'vs1' });
+  it('get calls GET with optional include', async () => {
+    await kbs.get('vs_1', { include: 'processing' });
 
-      const result = await vectorStores.get('vs1');
-
-      expect(http.get).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1`);
-      expect(result).toEqual({ id: 'vs1' });
-    });
+    expect(http.get).toHaveBeenCalledWith(`${KB}/vs_1`, { include: 'processing' });
   });
 
-  describe('update', () => {
-    it('calls PATCH on specific vector store path', async () => {
-      const params = { name: 'Updated VS' };
-      http.patch.mockResolvedValueOnce({ id: 'vs1', name: 'Updated VS' });
+  it('update calls PATCH', async () => {
+    const params = { name: 'Renamed', crawl_settings: { paused: true } };
 
-      const result = await vectorStores.update('vs1', params as any);
+    await kbs.update('vs_1', params);
 
-      expect(http.patch).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1`, params);
-      expect(result).toEqual({ id: 'vs1', name: 'Updated VS' });
-    });
+    expect(http.patch).toHaveBeenCalledWith(`${KB}/vs_1`, params);
   });
 
-  describe('delete', () => {
-    it('calls DELETE on specific vector store path', async () => {
-      http.delete.mockResolvedValueOnce(undefined);
+  it('delete calls DELETE', async () => {
+    await kbs.delete('vs_1');
 
-      await vectorStores.delete('vs1');
-
-      expect(http.delete).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1`, undefined);
-    });
+    expect(http.delete).toHaveBeenCalledWith(`${KB}/vs_1`, undefined);
   });
 
-  describe('search', () => {
-    it('calls POST on search path', async () => {
-      const params = { query: 'hello', limit: 5 };
-      http.post.mockResolvedValueOnce([{ id: 'r1', score: 0.95 }]);
+  it('search calls POST on search path', async () => {
+    const params = { query: 'hello', limit: 5 };
+    http.post.mockResolvedValueOnce({ object: 'list', data: [{ document_id: 'vsf_1', score: 0.9 }] });
 
-      const result = await vectorStores.search('vs1', params as any);
+    const result = await kbs.search('vs_1', params);
 
-      expect(http.post).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/search`,
-        params,
-        undefined,
-      );
-      expect(result).toEqual([{ id: 'r1', score: 0.95 }]);
-    });
+    expect(http.post).toHaveBeenCalledWith(`${KB}/vs_1/search`, params, undefined);
+    expect(result.data[0].score).toBe(0.9);
   });
 
-  describe('reindex', () => {
-    it('calls POST on reindex path', async () => {
-      http.post.mockResolvedValueOnce(undefined);
+  it('reindex calls POST on reindex path', async () => {
+    await kbs.reindex('vs_1', { reset_chunking_overrides: true });
 
-      await vectorStores.reindex('vs1');
-
-      expect(http.post).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1/reindex`, undefined, undefined);
-    });
-  });
-
-  describe('crawlStatus', () => {
-    it('calls GET on crawl_status path', async () => {
-      http.get.mockResolvedValueOnce({ status: 'running', progress: 50 });
-
-      const result = await vectorStores.crawlStatus('vs1');
-
-      expect(http.get).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1/crawl_status`);
-      expect(result).toEqual({ status: 'running', progress: 50 });
-    });
-  });
-
-  describe('recrawl', () => {
-    it('calls POST on recrawl path', async () => {
-      http.post.mockResolvedValueOnce(undefined);
-
-      await vectorStores.recrawl('vs1');
-
-      expect(http.post).toHaveBeenCalledWith(`${PREFIX}/vector_stores/vs1/recrawl`, undefined, undefined);
-    });
+    expect(http.post).toHaveBeenCalledWith(
+      `${KB}/vs_1/reindex`,
+      { reset_chunking_overrides: true },
+      undefined,
+    );
   });
 });
 
 // ---------------------------------------------------------------------------
-// VSFiles
+// KBDocuments
 // ---------------------------------------------------------------------------
 
-describe('VSFiles', () => {
+describe('KBDocuments', () => {
   let http: ReturnType<typeof createMockHttpClient>;
-  let vsFiles: VSFiles;
+  let docs: KBDocuments;
+  const DOCS = `${KB}/vs_1/documents`;
 
   beforeEach(() => {
     http = createMockHttpClient();
-    vsFiles = new VSFiles(http, WS_ID);
+    docs = new KBDocuments(http, WS_ID);
   });
 
-  describe('list', () => {
-    it('returns a PageIterator', () => {
-      const iter = vsFiles.list('vs1');
-      expect(iter).toBeDefined();
-    });
+  it('list paginates the documents path with filters', async () => {
+    http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 1, limit: 20, has_more: false });
 
-    it('passes params', () => {
-      const iter = vsFiles.list('vs1', { page: 1, limit: 10 } as any);
-      expect(iter).toBeDefined();
-    });
-  });
+    await docs.list('vs_1', { status: 'failed', 'tags.project': 'x' }).toArray();
 
-  describe('add', () => {
-    it('calls POST to add file to vector store', async () => {
-      const params = { fileId: 'f1' };
-      http.post.mockResolvedValueOnce({ id: 'vsf1' });
-
-      const result = await vsFiles.add('vs1', params as any);
-
-      expect(http.post).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/files`,
-        params,
-        undefined,
-      );
-      expect(result).toEqual({ id: 'vsf1' });
+    expect(http.request.mock.calls[0][0]).toMatchObject({
+      path: DOCS,
+      query: { status: 'failed', 'tags.project': 'x' },
     });
   });
 
-  describe('update', () => {
-    it('calls PATCH on specific vs file path', async () => {
-      const params = { metadata: { key: 'val' } };
-      http.patch.mockResolvedValueOnce({ id: 'vsf1' });
+  it('add attaches an uploaded file by native_file_id', async () => {
+    const params = { native_file_id: 'f1', tags: { project: 'x' } };
+    http.post.mockResolvedValueOnce({ id: 'vsf_1' });
 
-      const result = await vsFiles.update('vs1', 'vsf1', params as any);
+    const result = await docs.add('vs_1', params);
 
-      expect(http.patch).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/files/vsf1`,
-        params,
-      );
-      expect(result).toEqual({ id: 'vsf1' });
-    });
+    expect(http.post).toHaveBeenCalledWith(DOCS, params, undefined);
+    expect(result).toEqual({ id: 'vsf_1' });
   });
 
-  describe('delete', () => {
-    it('calls DELETE on specific vs file path', async () => {
-      http.delete.mockResolvedValueOnce(undefined);
+  it('get calls GET on the document path', async () => {
+    await docs.get('vs_1', 'vsf_1');
 
-      await vsFiles.delete('vs1', 'vsf1');
-
-      expect(http.delete).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/files/vsf1`,
-        undefined,
-      );
-    });
+    expect(http.get).toHaveBeenCalledWith(`${DOCS}/vsf_1`, undefined);
   });
 
-  describe('chunks', () => {
-    it('calls GET on chunks path', async () => {
-      http.get.mockResolvedValueOnce([{ id: 'ch1', text: 'chunk' }]);
+  it('update calls PATCH on the document path', async () => {
+    await docs.update('vs_1', 'vsf_1', { tags: { a: 1 } });
 
-      const result = await vsFiles.chunks('vs1', 'vsf1');
-
-      expect(http.get).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/files/vsf1/chunks`,
-      );
-      expect(result).toEqual([{ id: 'ch1', text: 'chunk' }]);
-    });
+    expect(http.patch).toHaveBeenCalledWith(`${DOCS}/vsf_1`, { tags: { a: 1 } });
   });
 
-  describe('reindex', () => {
-    it('calls POST on specific file reindex path', async () => {
-      http.post.mockResolvedValueOnce(undefined);
+  it('delete calls DELETE on the document path', async () => {
+    await docs.delete('vs_1', 'vsf_1');
 
-      await vsFiles.reindex('vs1', 'vsf1');
+    expect(http.delete).toHaveBeenCalledWith(`${DOCS}/vsf_1`, undefined);
+  });
 
-      expect(http.post).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/files/vsf1/reindex`,
-        undefined,
-        undefined,
-      );
+  it('chunks paginates the chunks path', async () => {
+    http.request.mockResolvedValueOnce({
+      object: 'list',
+      data: [{ chunk_index: 0, text: 'chunk' }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      has_more: false,
     });
+
+    const chunks = await docs.chunks('vs_1', 'vsf_1').toArray();
+
+    expect(http.request.mock.calls[0][0].path).toBe(`${DOCS}/vsf_1/chunks`);
+    expect(chunks).toEqual([{ chunk_index: 0, text: 'chunk' }]);
+  });
+
+  it('reindex calls POST on the document reindex path', async () => {
+    await docs.reindex('vs_1', 'vsf_1');
+
+    expect(http.post).toHaveBeenCalledWith(`${DOCS}/vsf_1/reindex`, undefined, undefined);
   });
 });
 
 // ---------------------------------------------------------------------------
-// VSAccess
+// KBAccess
 // ---------------------------------------------------------------------------
 
-describe('VSAccess', () => {
+describe('KBAccess', () => {
   let http: ReturnType<typeof createMockHttpClient>;
-  let vsAccess: VSAccess;
+  let access: KBAccess;
+  const ACCESS = `${KB}/vs_1/access`;
 
   beforeEach(() => {
     http = createMockHttpClient();
-    vsAccess = new VSAccess(http, WS_ID);
+    access = new KBAccess(http, WS_ID);
   });
 
-  describe('list', () => {
-    it('returns a PageIterator', () => {
-      const iter = vsAccess.list('vs1');
-      expect(iter).toBeDefined();
-    });
+  it('list paginates the access path', async () => {
+    http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 1, limit: 20, has_more: false });
+
+    await access.list('vs_1').toArray();
+
+    expect(http.request.mock.calls[0][0].path).toBe(ACCESS);
   });
 
-  describe('grant', () => {
-    it('calls POST on access path', async () => {
-      const params = { userId: 'u1', role: 'reader' };
-      http.post.mockResolvedValueOnce({ id: 'vsa1' });
+  it('grant calls POST on the access path', async () => {
+    const params = { principal_type: 'user' as const, principal_id: 'u1', role: 'reader' as const };
 
-      const result = await vsAccess.grant('vs1', params as any);
+    await access.grant('vs_1', params);
 
-      expect(http.post).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/access`,
-        params,
-        undefined,
-      );
-      expect(result).toEqual({ id: 'vsa1' });
-    });
+    expect(http.post).toHaveBeenCalledWith(ACCESS, params, undefined);
   });
 
-  describe('update', () => {
-    it('calls PATCH on specific access entry', async () => {
-      const params = { role: 'writer' };
-      http.patch.mockResolvedValueOnce({ id: 'vsa1', role: 'writer' });
+  it('update calls PATCH on the principal path', async () => {
+    await access.update('vs_1', 'group', 'g1', { role: 'editor' });
 
-      const result = await vsAccess.update('vs1', 'vsa1', params as any);
-
-      expect(http.patch).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/access/vsa1`,
-        params,
-      );
-      expect(result).toEqual({ id: 'vsa1', role: 'writer' });
-    });
+    expect(http.patch).toHaveBeenCalledWith(`${ACCESS}/group/g1`, { role: 'editor' });
   });
 
-  describe('revoke', () => {
-    it('calls DELETE on specific access entry with principal type and id', async () => {
-      http.delete.mockResolvedValueOnce(undefined);
+  it('revoke calls DELETE on the principal path', async () => {
+    await access.revoke('vs_1', 'user', 'u1');
 
-      await vsAccess.revoke('vs1', 'user', 'u1');
+    expect(http.delete).toHaveBeenCalledWith(`${ACCESS}/user/u1`, undefined);
+  });
+});
 
-      expect(http.delete).toHaveBeenCalledWith(
-        `${PREFIX}/vector_stores/vs1/access/user/u1`,
-        undefined,
-      );
-    });
+// ---------------------------------------------------------------------------
+// KBWebSources
+// ---------------------------------------------------------------------------
+
+describe('KBWebSources', () => {
+  let http: ReturnType<typeof createMockHttpClient>;
+  let sources: KBWebSources;
+  const SOURCES = `${KB}/vs_1/web_sources`;
+
+  beforeEach(() => {
+    http = createMockHttpClient();
+    sources = new KBWebSources(http, WS_ID);
+  });
+
+  it('list paginates the web sources path', async () => {
+    http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 1, limit: 20, has_more: false });
+
+    await sources.list('vs_1').toArray();
+
+    expect(http.request.mock.calls[0][0].path).toBe(SOURCES);
+  });
+
+  it('add calls POST on the web sources path', async () => {
+    const params = { url: 'https://example.com/docs' };
+
+    await sources.add('vs_1', params);
+
+    expect(http.post).toHaveBeenCalledWith(SOURCES, params, undefined);
+  });
+
+  it('get calls GET on the seed path', async () => {
+    await sources.get('vs_1', 'seed_1');
+
+    expect(http.get).toHaveBeenCalledWith(`${SOURCES}/seed_1`, undefined);
+  });
+
+  it('delete calls DELETE on the seed path', async () => {
+    await sources.delete('vs_1', 'seed_1');
+
+    expect(http.delete).toHaveBeenCalledWith(`${SOURCES}/seed_1`, undefined);
   });
 });

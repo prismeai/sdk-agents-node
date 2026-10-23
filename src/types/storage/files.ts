@@ -1,24 +1,27 @@
-import type { Timestamp } from '../common.js';
-
 export interface FileObject {
   id: string;
   name: string;
-  url?: string;
-  mimeType?: string;
-  size?: number;
+  url: string;
+  mimetype: string;
+  size: number;
+  workspaceId: string;
+  /** Storage key, `<workspaceId>/<id>.<name>`. */
+  path: string;
   metadata?: Record<string, unknown>;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  public?: boolean;
+  expiresAt?: string | null;
   [key: string]: unknown;
 }
 
 export interface FileUploadParams {
-  name?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface FileListParams {
   page?: number;
   limit?: number;
-  search?: string;
+  /** Sort field, e.g. `-createdAt`. */
+  sort?: string;
+  /** Filter on any file field, e.g. `{ 'metadata.type': 'source', mimetype: 'application/pdf' }`. */
+  [filter: string]: string | number | undefined;
 }

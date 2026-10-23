@@ -1,6 +1,6 @@
 # @prisme.ai/sdk-agents
 
-Official Node.js SDK for the [Prisme.ai](https://prisme.ai) Agent Factory and Storage APIs.
+Official Node.js SDK for the [Prisme.ai](https://prisme.ai) Agent Factory and Knowledge Bases (storage) APIs.
 
 ## Installation
 
@@ -185,43 +185,100 @@ await client.tasks.cancel('agent-id', 'task-id');
 
 ### Files (Storage)
 
-```typescript
-// Upload a file
-const file = await client.storage.files.upload(
-  Buffer.from('Hello World'),
-  { filename: 'hello.txt' },
-);
-
-// List files
-for await (const f of client.storage.files.list()) {
-  console.log(f.name, f.size);
-}
-
-// Download
-const response = await client.storage.files.download(file.id);
-```
-
-### Vector Stores (Storage)
+Files are uploaded privately to the storage workspace and belong to the authenticated user, so upload with a `bearerToken`: an `apiKey` alone does not identify a user.
 
 ```typescript
-// Create a vector store
-const vs = await client.storage.vectorStores.create({
-  name: 'My Knowledge Base',
+// Upload a file (path, Buffer, Blob, Uint8Array or ReadableStream)
+const file = await client.storage.files.upload('./handbook.pdf', {
+  filename: 'handbook.pdf',
+  metadata: { team: 'support' },
 });
 
+// Get metadata and download
+const info = await client.storage.files.get(file.id);
+const response = await client.storage.files.download(file.id);
+const bytes = Buffer.from(await response.arrayBuffer());
+```
+
+### Knowledge Bases (Storage)
+
+```typescript
+// Create a knowledge base
+const kb = await client.storage.knowledgeBases.create({ name: 'Support docs' });
+
+// Index an uploaded file by attaching it.
+const doc = await client.storage.knowledgeBases.documents.add(kb.id, {
+  native_file_id: file.id,
+  tags: { team: 'support' },
+});
+
+// Or index a page or a remote document by URL
+await client.storage.knowledgeBases.documents.add(kb.id, {
+  source_url: 'https://example.com/faq',
+});
+
+// Track indexing
+const current = await client.storage.knowledgeBases.documents.get(kb.id, doc.id);
+console.log(current.status); // queued | in_progress | completed | failed | ...
+
 // Search
-const results = await client.storage.vectorStores.search(vs.id, {
+const { data: hits } = await client.storage.knowledgeBases.search(kb.id, {
   query: 'How do I reset my password?',
   limit: 5,
 });
-
-// Manage files in a vector store
-await client.storage.vectorStores.files.add(vs.id, { fileId: 'file-id' });
-
-for await (const file of client.storage.vectorStores.files.list(vs.id)) {
-  console.log(file.name, file.status);
+for (const hit of hits) {
+  console.log(hit.score, hit.content.map((c) => c.text).join(''));
 }
+
+// List documents and their chunks
+for await (const d of client.storage.knowledgeBases.documents.list(kb.id, { status: 'failed' })) {
+  console.log(d.filename, d.last_error);
+}
+for await (const chunk of client.storage.knowledgeBases.documents.chunks(kb.id, doc.id)) {
+  console.log(chunk.chunk_index, chunk.text);
+}
+
+// Share
+await client.storage.knowledgeBases.access.grant(kb.id, {
+  principal_type: 'user',
+  principal_id: 'user-id',
+  role: 'reader',
+});
+
+// Crawl a website on a schedule
+await client.storage.knowledgeBases.webSources.add(kb.id, { url: 'https://example.com/docs' });
+await client.storage.knowledgeBases.update(kb.id, { crawl_settings: { periodicity: 86400 } });
 ```
+
+### Migrating from 0.2
+
+0.3 moves storage resources to the Knowledge Bases API. `client.storage.vectorStores` is removed and `client.storage.files` now targets the platform's native files API.
+
+| 0.2 | 0.3 |
+|-----|-----|
+| `storage.vectorStores.list/create/get/update/delete` | `storage.knowledgeBases.list/create/get/update/delete` |
+| `storage.vectorStores.search(id, params)` → `T[]` | `storage.knowledgeBases.search(id, params)` → `{ object, data }` |
+| `storage.vectorStores.reindex(id)` | `storage.knowledgeBases.reindex(id, params?)` |
+| `storage.vectorStores.crawlStatus(id)` | `storage.knowledgeBases.get(id, { include: 'processing' })` → `.processing` |
+| `storage.vectorStores.recrawl(id)` | Removed: register crawl sources with `knowledgeBases.webSources` and set `crawl_settings.periodicity`; `reindex` re-fetches known pages |
+| `storage.vectorStores.files.list/add/update/delete/reindex` | `storage.knowledgeBases.documents.list/add/update/delete/reindex` (plus `get`) |
+| `storage.vectorStores.files.chunks(id, fileId)` → `Promise<T[]>` | `storage.knowledgeBases.documents.chunks(id, documentId)` → paginated iterator |
+| `storage.vectorStores.access.list/grant/revoke` | `storage.knowledgeBases.access.list/grant/revoke` |
+| `storage.vectorStores.access.update(id, accessId, params)` | `storage.knowledgeBases.access.update(id, principalType, principalId, { role })` |
+| — | `storage.knowledgeBases.webSources.list/add/get/delete` |
+
+Request and response fields follow the API's snake_case names, and timestamps are Unix seconds:
+
+- `documents.add`: `{ fileId }` becomes `{ native_file_id }`; `{ url }` becomes `{ source_url }` (or `fetch_url`).
+- `search`: `scoreThreshold` becomes `min_score`, `filters` becomes `filter`.
+- `access.grant`: `{ userId | email, role }` becomes `{ principal_type, principal_id, role }`.
+- Knowledge base `config` is replaced by `embedding`, `chunking_strategy` and `parser`.
+
+`storage.files`:
+
+- `upload()` no longer accepts `name`; use `filename`. Uploaded files are private.
+- `FileObject.mimeType` is now `mimetype`, and the object carries `path` and `workspaceId`.
+- `list()` accepts `sort` and field filters (e.g. `{ 'metadata.team': 'support' }`) instead of `search`.
 
 ### Pagination
 

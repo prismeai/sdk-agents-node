@@ -588,121 +588,176 @@ async function testOrgs() {
 // ════════════════════════════════════════════════════════════════
 // 16. STORAGE — Files
 // ════════════════════════════════════════════════════════════════
+let uploadedFileId;
+
 async function testFiles() {
   console.log('\n── Storage: Files ─────────────────────────────');
 
-  let fileId;
-
   await test('files.upload', async () => {
     const file = await client.storage.files.upload(
-      Buffer.from('Hello from SDK test!'),
-      { filename: 'sdk-test.txt' },
+      Buffer.from('Hello from SDK test! The answer is 42.'),
+      { filename: 'sdk-test.txt', metadata: { source: 'sdk-test' } },
     );
-    fileId = file?.id;
-    log('Uploaded', file);
-  });
-
-  await test('files.list', async () => {
-    const items = [];
-    for await (const file of client.storage.files.list()) {
-      items.push({ id: file.id, name: file.name });
-      if (items.length >= 3) break;
-    }
-    if (items.length === 0) throw new Error('Expected at least 1 file');
-    if (!fileId) fileId = items[0].id; // fallback to first listed file
-    log('Listed', { count: items.length });
+    if (!file?.id) throw new Error('Expected file with id');
+    uploadedFileId = file.id;
+    log('Uploaded', { id: file.id, name: file.name });
   });
 
   await test('files.get', async () => {
-    if (!fileId) { log('Skipped — no fileId'); return; }
-    const file = await client.storage.files.get(fileId);
+    if (!uploadedFileId) { log('Skipped — no fileId'); return; }
+    const file = await client.storage.files.get(uploadedFileId);
     if (!file) throw new Error('Expected file object');
-    log('Got', { id: file.id, name: file.name });
+    log('Got', { id: file.id, name: file.name, mimetype: file.mimetype });
   });
 
   await test('files.download', async () => {
-    if (!fileId) { log('Skipped — no fileId'); return; }
-    const response = await client.storage.files.download(fileId);
+    if (!uploadedFileId) { log('Skipped — no fileId'); return; }
+    const response = await client.storage.files.download(uploadedFileId);
     const text = await response.text();
-    if (typeof text !== 'string') throw new Error('Expected text content');
+    if (!text.includes('SDK test')) throw new Error('Unexpected content');
     log('Downloaded', { size: text.length, content: text.slice(0, 100) });
   });
 
-  await test('files.delete', async () => {
-    if (!fileId) { log('Skipped — no fileId'); return; }
-    await client.storage.files.delete(fileId);
-    log('Deleted', { id: fileId });
-  });
+  await testSkip('files.list', 'requires management rights on the storage workspace');
+  await testSkip('files.delete', 'requires management rights on the storage workspace');
 }
 
 // ════════════════════════════════════════════════════════════════
-// 17. STORAGE — Vector Stores
+// 17. STORAGE — Knowledge Bases
 // ════════════════════════════════════════════════════════════════
-async function testVectorStores() {
-  console.log('\n── Storage: Vector Stores ─────────────────────');
+async function testKnowledgeBases() {
+  console.log('\n── Storage: Knowledge Bases ───────────────────');
 
-  let vsId;
+  const kbs = client.storage.knowledgeBases;
+  let kbId;
+  let documentId;
+  let webSourceId;
 
-  await test('vectorStores.create', async () => {
-    const vs = await client.storage.vectorStores.create({
-      name: `SDK-Test-VS-${Date.now()}`,
-    });
-    if (!vs || !vs.id) throw new Error('Expected vector store with id');
-    vsId = vs.id;
-    log('Created', { id: vs.id, name: vs.name });
+  await test('knowledgeBases.create', async () => {
+    const kb = await kbs.create({ name: `SDK-Test-KB-${Date.now()}` });
+    if (!kb?.id) throw new Error('Expected knowledge base with id');
+    kbId = kb.id;
+    log('Created', { id: kb.id, name: kb.name, status: kb.status });
   });
 
-  await test('vectorStores.list', async () => {
+  await test('knowledgeBases.list', async () => {
     const items = [];
-    for await (const vs of client.storage.vectorStores.list()) {
-      items.push({ id: vs.id, name: vs.name });
+    for await (const kb of kbs.list()) {
+      items.push({ id: kb.id, name: kb.name });
       if (items.length >= 3) break;
     }
-    if (items.length === 0) throw new Error('Expected at least 1 vector store');
+    if (items.length === 0) throw new Error('Expected at least 1 knowledge base');
     log('Listed', { count: items.length });
   });
 
-  await test('vectorStores.get', async () => {
-    if (!vsId) { log('Skipped'); return; }
-    const vs = await client.storage.vectorStores.get(vsId);
-    if (!vs) throw new Error('Expected vector store object');
-    log('Got', { id: vs.id, name: vs.name });
+  await test('knowledgeBases.get', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const kb = await kbs.get(kbId, { include: 'processing' });
+    log('Got', { id: kb.id, status: kb.status, processing: kb.processing });
   });
 
-  await test('vectorStores.update', async () => {
-    if (!vsId) { log('Skipped'); return; }
-    const vs = await client.storage.vectorStores.update(vsId, {
-      name: 'SDK-Test-VS-Updated',
+  await test('knowledgeBases.update', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const kb = await kbs.update(kbId, { name: 'SDK-Test-KB-Updated' });
+    log('Updated', { id: kb.id, name: kb.name });
+  });
+
+  await test('knowledgeBases.documents.add', async () => {
+    if (!kbId || !uploadedFileId) { log('Skipped — needs KB + uploaded file'); return; }
+    const doc = await kbs.documents.add(kbId, {
+      native_file_id: uploadedFileId,
+      tags: { source: 'sdk-test' },
     });
-    if (!vs) throw new Error('Expected updated vector store');
-    log('Updated', { id: vs.id, name: vs.name });
+    documentId = doc.id;
+    log('Added', { id: doc.id, status: doc.status });
   });
 
-  await test('vectorStores.search', async () => {
-    if (!vsId) { log('Skipped'); return; }
-    const results = await client.storage.vectorStores.search(vsId, {
-      query: 'test search',
-      limit: 3,
-    });
-    log('Searched', { results: Array.isArray(results) ? results.length : 'non-array' });
+  await test('knowledgeBases.documents.list', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const docs = await kbs.documents.list(kbId).toArray();
+    log('Listed', { count: docs.length });
   });
 
-  await test('vectorStores.crawlStatus', async () => {
-    if (!vsId) { log('Skipped'); return; }
-    const status = await client.storage.vectorStores.crawlStatus(vsId);
-    log('Crawl status', status);
+  await test('knowledgeBases.documents.get', async () => {
+    if (!kbId || !documentId) { log('Skipped'); return; }
+    for (let i = 0; i < 15; i++) {
+      const doc = await kbs.documents.get(kbId, documentId);
+      if (doc.status === 'completed' || doc.status === 'failed') {
+        log('Indexed', { id: doc.id, status: doc.status, last_error: doc.last_error });
+        return;
+      }
+      await sleep(2000);
+    }
+    log('Still indexing');
   });
 
-  await testSkip('vectorStores.reindex', 'requires indexed documents');
-  await testSkip('vectorStores.recrawl', 'requires crawled sources');
+  await test('knowledgeBases.documents.chunks', async () => {
+    if (!kbId || !documentId) { log('Skipped'); return; }
+    const chunks = await kbs.documents.chunks(kbId, documentId).toArray();
+    log('Chunks', { count: chunks.length });
+  });
 
-  await testSkip('vectorStores.files.list', 'requires files in VS');
-  await testSkip('vectorStores.files.add', 'requires file + VS with docs');
+  await test('knowledgeBases.search', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const { data } = await kbs.search(kbId, { query: 'What is the answer?', limit: 3 });
+    log('Searched', { hits: data.length, top: data[0]?.score });
+  });
 
-  await test('vectorStores.delete', async () => {
-    if (!vsId) { log('Skipped'); return; }
-    await client.storage.vectorStores.delete(vsId);
-    log('Deleted', { id: vsId });
+  await test('knowledgeBases.documents.reindex', async () => {
+    if (!kbId || !documentId) { log('Skipped'); return; }
+    const doc = await kbs.documents.reindex(kbId, documentId);
+    log('Reindex queued', { id: doc.id, status: doc.status });
+  });
+
+  await test('knowledgeBases.access.list', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const bindings = await kbs.access.list(kbId).toArray();
+    log('Access', bindings.map((b) => ({ principal_type: b.principal_type, role: b.role })));
+  });
+
+  await testSkip('knowledgeBases.access.grant/update/revoke', 'requires another principal id');
+
+  await test('knowledgeBases.webSources.add', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const source = await kbs.webSources.add(kbId, { url: 'https://example.com/' });
+    webSourceId = source.id;
+    log('Added', { id: source.id, url: source.url });
+  });
+
+  await test('knowledgeBases.webSources.list', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const sources = await kbs.webSources.list(kbId).toArray();
+    log('Listed', { count: sources.length });
+  });
+
+  await test('knowledgeBases.webSources.get', async () => {
+    if (!kbId || !webSourceId) { log('Skipped'); return; }
+    const source = await kbs.webSources.get(kbId, webSourceId);
+    log('Got', { id: source.id, metrics: source.metrics });
+  });
+
+  await test('knowledgeBases.webSources.delete', async () => {
+    if (!kbId || !webSourceId) { log('Skipped'); return; }
+    await kbs.webSources.delete(kbId, webSourceId);
+    log('Deleted', { id: webSourceId });
+  });
+
+  await test('knowledgeBases.reindex', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    const result = await kbs.reindex(kbId);
+    log('Reindex', result);
+  });
+
+  await test('knowledgeBases.documents.delete', async () => {
+    if (!kbId || !documentId) { log('Skipped'); return; }
+    await kbs.documents.delete(kbId, documentId);
+    log('Deleted', { id: documentId });
+  });
+
+  await test('knowledgeBases.delete', async () => {
+    if (!kbId) { log('Skipped'); return; }
+    await kbs.delete(kbId);
+    log('Deleted', { id: kbId });
   });
 }
 
@@ -840,7 +895,7 @@ async function main() {
 
     // Storage
     await testFiles();
-    await testVectorStores();
+    await testKnowledgeBases();
     await testSkills();
     await testStats();
   } catch (err) {
