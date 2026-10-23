@@ -77,7 +77,8 @@ export class PageIterator<T> implements AsyncIterable<T> {
         yield item;
       }
 
-      if (result.data.length < this.pageSize || result.hasMore === false) {
+      // A server may cap `limit` below the page size: a short page only ends the listing when it reports no more.
+      if (!result.data.length || result.hasMore === false || (result.hasMore !== true && result.data.length < this.pageSize)) {
         break;
       }
 

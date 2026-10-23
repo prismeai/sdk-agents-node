@@ -188,6 +188,15 @@ export interface DocumentReindexParams {
   reason?: string;
 }
 
+export interface DocumentSourceUrl {
+  object: 'document.source_url';
+  document_id: string;
+  source_type: DocumentSourceType;
+  url: string;
+  /** Unix seconds; set for a short-lived uploaded-file link, null otherwise. */
+  expires_at: number | null;
+}
+
 export interface DocumentChunk {
   chunk_index: number;
   text: string;
