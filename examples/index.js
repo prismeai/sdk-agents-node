@@ -619,7 +619,12 @@ async function testFiles() {
   });
 
   await testSkip('files.list', 'requires management rights on the storage workspace');
-  await testSkip('files.delete', 'requires management rights on the storage workspace');
+  await test('files.delete', async () => {
+    // Its own file: the knowledge base tests attach uploadedFileId.
+    const file = await client.storage.files.upload(Buffer.from('SDK delete test'), { filename: 'sdk-delete.txt' });
+    await client.storage.files.delete(file.id);
+    log('Deleted', { id: file.id });
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
