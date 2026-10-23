@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Files } from '../../src/resources/storage/files.js';
 import { Skills } from '../../src/resources/storage/skills.js';
 import { Stats } from '../../src/resources/storage/stats.js';
@@ -83,9 +86,17 @@ describe('Files', () => {
       expect(http.request.mock.calls[0][0]).toMatchObject({
         method: 'GET',
         path: FILES,
-        query: { 'metadata.type': 'source', page: 1, limit: 20 },
+        query: { 'metadata.type': 'source', page: 0, limit: 20 },
       });
-      expect(http.request.mock.calls[1][0].query.page).toBe(2);
+      expect(http.request.mock.calls[1][0].query.page).toBe(1);
+    });
+
+    it('starts from the page and limit the caller gives', async () => {
+      http.request.mockResolvedValueOnce([]);
+
+      await files.list({ page: 3, limit: 5 }).toArray();
+
+      expect(http.request.mock.calls[0][0].query).toEqual({ page: 3, limit: 5 });
     });
   });
 
@@ -109,6 +120,20 @@ describe('Files', () => {
       expect(fd.has('shareToken')).toBe(false);
       expect(fd.has('expiresAfter')).toBe(false);
       expect(result).toEqual({ id: 'f1', name: 'test.txt' });
+    });
+
+    it('names and types a file read from a path after its basename', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'sdk-upload-'));
+      const filePath = join(dir, 'report.pdf');
+      await writeFile(filePath, 'pdf');
+      http.post.mockResolvedValueOnce([{ id: 'f3' }]);
+
+      await files.upload(filePath);
+
+      const sent = (http.post.mock.calls[0][1] as FormData).get('file') as File;
+      expect(sent.name).toBe('report.pdf');
+      expect(sent.type).toBe('application/pdf');
+      await rm(dir, { recursive: true });
     });
 
     it('works without params', async () => {
@@ -383,6 +408,14 @@ describe('KBDocuments', () => {
     });
   });
 
+  it('list starts from the page and limit the caller gives', async () => {
+    http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 2, limit: 5, has_more: false });
+
+    await docs.list('vs_1', { page: 2, limit: 5 }).toArray();
+
+    expect(http.request.mock.calls[0][0].query).toEqual({ page: 2, limit: 5 });
+  });
+
   it('add attaches an uploaded file by native_file_id', async () => {
     const params = { native_file_id: 'f1', tags: { project: 'x' } };
     http.post.mockResolvedValueOnce({ id: 'vsf_1' });
@@ -425,6 +458,12 @@ describe('KBDocuments', () => {
 
     expect(http.request.mock.calls[0][0].path).toBe(`${DOCS}/vsf_1/chunks`);
     expect(chunks).toEqual([{ chunk_index: 0, text: 'chunk' }]);
+  });
+
+  it('sourceUrl calls GET on the document source_url path', async () => {
+    await docs.sourceUrl('vs_1', 'vsf_1');
+
+    expect(http.get).toHaveBeenCalledWith(`${DOCS}/vsf_1/source_url`, undefined);
   });
 
   it('reindex calls POST on the document reindex path', async () => {

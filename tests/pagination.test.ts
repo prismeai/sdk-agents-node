@@ -38,6 +38,17 @@ describe('defaultExtractor', () => {
 });
 
 describe('PageIterator', () => {
+  it('keeps paging when the server caps the limit and reports more', async () => {
+    const client = createMockHttpClient({
+      1: { data: [1, 2], total: 3, page: 1, limit: 2 },
+      2: { data: [3], total: 3, page: 2, limit: 2 },
+    });
+
+    const items = await new PageIterator(client, { method: 'GET', path: '/test' }, defaultExtractor, 500).toArray();
+
+    expect(items).toEqual([1, 2, 3]);
+  });
+
   it('iterates through all pages', async () => {
     const client = createMockHttpClient({
       1: { results: [1, 2], total: 4, page: 1, limit: 2 },

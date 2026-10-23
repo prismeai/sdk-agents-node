@@ -200,6 +200,8 @@ const response = await client.storage.files.download(file.id);
 const bytes = Buffer.from(await response.arrayBuffer());
 ```
 
+`files.list` and `files.delete` require edit rights on the storage workspace. To remove an indexed file, delete its document from the knowledge base.
+
 ### Knowledge Bases (Storage)
 
 ```typescript
@@ -220,6 +222,9 @@ await client.storage.knowledgeBases.documents.add(kb.id, {
 // Track indexing
 const current = await client.storage.knowledgeBases.documents.get(kb.id, doc.id);
 console.log(current.status); // queued | in_progress | completed | failed | ...
+
+// Link to the document's source; an uploaded file's link expires at `expires_at`, resolve it again after
+const { url } = await client.storage.knowledgeBases.documents.sourceUrl(kb.id, doc.id);
 
 // Search
 const { data: hits } = await client.storage.knowledgeBases.search(kb.id, {

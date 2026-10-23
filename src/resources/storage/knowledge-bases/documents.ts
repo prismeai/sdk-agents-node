@@ -8,6 +8,7 @@ import type {
   DocumentListParams,
   DocumentReindexParams,
   DocumentChunk,
+  DocumentSourceUrl,
 } from '../../../types/storage/knowledge-bases.js';
 
 export class KBDocuments extends BaseResource {
@@ -50,6 +51,11 @@ export class KBDocuments extends BaseResource {
   /** List the chunks of a document. */
   chunks(knowledgeBaseId: string, documentId: string): PageIterator<DocumentChunk> {
     return this._paginate<DocumentChunk>(this.path(knowledgeBaseId, documentId, 'chunks'));
+  }
+
+  /** Resolve a link to the document's source; an uploaded file's link expires (`expires_at`), resolve again after. */
+  sourceUrl(knowledgeBaseId: string, documentId: string): Promise<DocumentSourceUrl> {
+    return this._get<DocumentSourceUrl>(this.path(knowledgeBaseId, documentId, 'source_url'));
   }
 
   /** Re-run indexing for a document, optionally with new chunking or parser settings. */

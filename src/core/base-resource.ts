@@ -42,16 +42,18 @@ export abstract class BaseResource {
     pagination?: PaginationParams,
     extractor?: (body: unknown) => PageResponse<T>,
   ): PageIterator<T> {
+    // The iterator owns page/limit: a caller's values set where it starts instead of being overwritten.
+    const { page, limit, ...rest } = query ?? {};
     return new PageIterator<T>(
       this.httpClient,
       {
         method: 'GET',
         path,
-        query: { ...query },
+        query: rest,
       },
       extractor ?? defaultExtractor<T>,
-      pagination?.limit ?? 20,
-      pagination?.page ?? 1,
+      pagination?.limit ?? limit ?? 20,
+      pagination?.page ?? page ?? 1,
     );
   }
 

@@ -121,6 +121,7 @@ export type {
   DocumentListParams,
   DocumentReindexParams,
   DocumentChunk,
+  DocumentSourceUrl,
   KnowledgeBaseAccessBinding,
   KnowledgeBaseAccessGrantParams,
   KnowledgeBaseAccessUpdateParams,
