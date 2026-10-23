@@ -1,9 +1,14 @@
 import { BaseResource } from '../../core/base-resource.js';
+import { PrismeAIError } from '../../core/errors.js';
 import type { HttpClient } from '../../core/http-client.js';
 import type { PageIterator } from '../../core/pagination.js';
 import { toFormData, mimeFromFilename, type FileInput, type FileUploadOptions } from '../../core/uploads.js';
 import type { FileObject, FileUploadParams, FileListParams } from '../../types/storage/files.js';
 
+/**
+ * Native files of the storage workspace. Attach an uploaded file to a knowledge base
+ * with `knowledgeBases.documents.add(kbId, { native_file_id: file.id })`.
+ */
 export class Files extends BaseResource {
   private readonly workspaceId: string;
 
@@ -13,45 +18,51 @@ export class Files extends BaseResource {
   }
 
   private path(...segments: string[]): string {
-    return this.buildPath(this.workspaceId, ...segments);
+    return ['/workspaces', `slug:${this.workspaceId}`, 'files', ...segments].join('/');
   }
 
-  /** List files. */
+  /** List the workspace's files. Requires management rights on the storage workspace. */
   list(params?: FileListParams): PageIterator<FileObject> {
-    return this._paginate<FileObject>(this.path('files'), params);
+    // The endpoint returns a bare array: keep paging while pages come back full.
+    return this._paginate<FileObject>(this.path(), params, undefined, (body) => ({
+      data: body as FileObject[],
+    }));
   }
 
-  /** Upload a file. */
+  /** Upload a private file. */
   async upload(file: FileInput, params?: FileUploadParams & FileUploadOptions): Promise<FileObject> {
-    const filename = params?.filename ?? params?.name ?? 'file';
+    const filename = params?.filename ?? 'file';
     const contentType = params?.contentType ?? mimeFromFilename(filename);
     const formData = await toFormData('file', file, { filename, contentType });
-
-    if (params?.name) {
-      formData.append('name', params.name);
-    }
+    formData.append('public', 'false');
     if (params?.metadata) {
       formData.append('metadata', JSON.stringify(params.metadata));
     }
 
-    return this.httpClient.post<FileObject>(this.path('files'), formData);
+    const [uploaded] = await this._post<FileObject[]>(this.path(), formData);
+    if (!uploaded) {
+      throw new PrismeAIError('File upload returned no file');
+    }
+    return uploaded;
   }
 
   /** Get file metadata. */
   get(fileId: string): Promise<FileObject> {
-    return this.httpClient.get<FileObject>(this.path('files', fileId));
+    return this._get<FileObject>(this.path(fileId));
   }
 
-  /** Delete a file. */
+  /** Delete a file. Requires management rights on the storage workspace. */
   delete(fileId: string): Promise<void> {
-    return this._del<void>(this.path('files', fileId));
+    return this._del<void>(this.path(fileId));
   }
 
-  /** Download a file. Returns the raw Response for streaming. */
+  /** Download a file's content. Returns the raw Response for streaming. */
   async download(fileId: string): Promise<Response> {
+    const { path } = await this.get(fileId);
+    // Resolved against the client's own baseURL so credentials never go to the host named in `url`.
     return this.httpClient.requestRaw({
       method: 'GET',
-      path: this.path('files', fileId, 'content'),
+      path: `/files/${path.split('/').map(encodeURIComponent).join('/')}`,
     });
   }
 }

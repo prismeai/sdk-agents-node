@@ -18,7 +18,7 @@ describe('PrismeAI client', () => {
     expect(client.orgs).toBeDefined();
     expect(client.storage).toBeDefined();
     expect(client.storage.files).toBeDefined();
-    expect(client.storage.vectorStores).toBeDefined();
+    expect(client.storage.knowledgeBases).toBeDefined();
     expect(client.storage.skills).toBeDefined();
     expect(client.storage.stats).toBeDefined();
   });
@@ -58,9 +58,10 @@ describe('PrismeAI client', () => {
     });
 
     expect(client.storage.files).toBeDefined();
-    expect(client.storage.vectorStores).toBeDefined();
-    expect(client.storage.vectorStores.files).toBeDefined();
-    expect(client.storage.vectorStores.access).toBeDefined();
+    expect(client.storage.knowledgeBases).toBeDefined();
+    expect(client.storage.knowledgeBases.documents).toBeDefined();
+    expect(client.storage.knowledgeBases.access).toBeDefined();
+    expect(client.storage.knowledgeBases.webSources).toBeDefined();
     expect(client.storage.skills).toBeDefined();
     expect(client.storage.stats).toBeDefined();
   });
