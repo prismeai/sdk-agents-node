@@ -164,10 +164,10 @@ describe('Files', () => {
   });
 
   describe('delete', () => {
-    it('calls DELETE on the file path', async () => {
+    it('goes through the storage route, which checks the uploader and that no document uses it', async () => {
       await files.delete('f1');
 
-      expect(http.delete).toHaveBeenCalledWith(`${FILES}/f1`, undefined);
+      expect(http.delete).toHaveBeenCalledWith(`/workspaces/slug:${WS_ID}/webhooks/v1/files/f1`, undefined);
     });
   });
 
