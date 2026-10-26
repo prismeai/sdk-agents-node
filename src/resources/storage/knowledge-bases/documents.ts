@@ -1,6 +1,6 @@
 import { BaseResource } from '../../../core/base-resource.js';
 import type { HttpClient } from '../../../core/http-client.js';
-import type { PageIterator } from '../../../core/pagination.js';
+import type { PageIterator, PaginationParams } from '../../../core/pagination.js';
 import type {
   KnowledgeBaseDocument,
   DocumentAddParams,
@@ -9,6 +9,7 @@ import type {
   DocumentReindexParams,
   DocumentChunk,
   DocumentSourceUrl,
+  DeleteResult,
 } from '../../../types/storage/knowledge-bases.js';
 
 export class KBDocuments extends BaseResource {
@@ -43,14 +44,17 @@ export class KBDocuments extends BaseResource {
     return this._patch<KnowledgeBaseDocument>(this.path(knowledgeBaseId, documentId), params);
   }
 
-  /** Remove a document from a knowledge base. */
-  delete(knowledgeBaseId: string, documentId: string): Promise<void> {
-    return this._del<void>(this.path(knowledgeBaseId, documentId));
+  /**
+   * Remove a document from a knowledge base. Its uploaded file is deleted too when no other document
+   * uses it and the document's owner uploaded it: `file_purged` says whether it was.
+   */
+  delete(knowledgeBaseId: string, documentId: string): Promise<DeleteResult> {
+    return this._del<DeleteResult>(this.path(knowledgeBaseId, documentId));
   }
 
   /** List the chunks of a document. */
-  chunks(knowledgeBaseId: string, documentId: string): PageIterator<DocumentChunk> {
-    return this._paginate<DocumentChunk>(this.path(knowledgeBaseId, documentId, 'chunks'));
+  chunks(knowledgeBaseId: string, documentId: string, params?: PaginationParams): PageIterator<DocumentChunk> {
+    return this._paginate<DocumentChunk>(this.path(knowledgeBaseId, documentId, 'chunks'), params);
   }
 
   /** Resolve a link to the document's source; an uploaded file's link expires (`expires_at`), resolve again after. */

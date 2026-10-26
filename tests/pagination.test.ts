@@ -31,6 +31,11 @@ describe('defaultExtractor', () => {
     expect(result.hasMore).toBe(false);
   });
 
+  it('reads a snake_case has_more', () => {
+    const result = defaultExtractor({ data: [1, 2], has_more: true });
+    expect(result.hasMore).toBe(true);
+  });
+
   it('handles empty object', () => {
     const result = defaultExtractor({});
     expect(result.data).toEqual([]);
@@ -100,6 +105,18 @@ describe('PageIterator', () => {
 
     const page = await iterator.getPage(2);
     expect(page.data).toEqual([3, 4]);
+  });
+
+  it('stops on an empty page even when the server reports more', async () => {
+    const client = createMockHttpClient({
+      1: { data: [], hasMore: true },
+      2: { data: [1], hasMore: false },
+    });
+
+    const iterator = new PageIterator(client, { method: 'GET', path: '/test' }, defaultExtractor, 2);
+
+    expect(await iterator.toArray()).toEqual([]);
+    expect(client.request).toHaveBeenCalledTimes(1);
   });
 
   it('stops when page has fewer items than page size', async () => {

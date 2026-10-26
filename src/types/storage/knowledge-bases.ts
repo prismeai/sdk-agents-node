@@ -113,6 +113,23 @@ export interface KnowledgeBaseReindexResult {
 }
 
 // Documents
+/** A knowledge base is deleted in the background. */
+export interface KnowledgeBaseDeletion {
+  id: string;
+  object: 'knowledge_base';
+  status: 'deleting';
+}
+
+/** Body of a delete. Document and file deletes also say whether the uploaded file was deleted with it. */
+export interface DeleteResult {
+  id?: string;
+  object?: string;
+  deleted: true;
+  file_purged?: boolean;
+  /** `DELETED` when the file went; otherwise why it was kept, e.g. `STILL_REFERENCED` or `NOT_OWNED`. */
+  purge_reason?: string;
+}
+
 export interface KnowledgeBaseDocument {
   id: string;
   object: 'knowledge_base.document';
@@ -142,7 +159,6 @@ export interface DocumentAddParams {
   source_type?: DocumentSourceType;
   /** Id of a file uploaded with `client.storage.files.upload()`. */
   native_file_id?: string;
-  native_file_workspace_id?: string;
   source_url?: string;
   fetch_url?: string;
   content?: string;
@@ -178,8 +194,12 @@ export interface DocumentListParams {
   owner_user_id?: string;
   search?: string;
   updated_before?: number;
-  /** Filter on a document tag, e.g. `{ 'tags.project': 'x' }`. */
+  /**
+   * Filter on a tag or metadata field, e.g. `{ 'tags.project': 'x' }`. The server ignores, without error,
+   * a key segment outside `[A-Za-z0-9_-]`, more than 4 levels, or a value containing `[` or `]`.
+   */
   [tagFilter: `tags.${string}`]: string | undefined;
+  [metadataFilter: `metadata.${string}`]: string | undefined;
 }
 
 export interface DocumentReindexParams {

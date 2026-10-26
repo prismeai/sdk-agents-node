@@ -1,7 +1,7 @@
 import { BaseResource } from '../../../core/base-resource.js';
 import type { HttpClient } from '../../../core/http-client.js';
-import type { PageIterator } from '../../../core/pagination.js';
-import type { WebSource, WebSourceAddParams } from '../../../types/storage/knowledge-bases.js';
+import type { PageIterator, PaginationParams } from '../../../core/pagination.js';
+import type { WebSource, WebSourceAddParams, DeleteResult } from '../../../types/storage/knowledge-bases.js';
 
 export class KBWebSources extends BaseResource {
   private readonly workspaceId: string;
@@ -16,8 +16,8 @@ export class KBWebSources extends BaseResource {
   }
 
   /** List the recurring crawl sources of a knowledge base. */
-  list(knowledgeBaseId: string): PageIterator<WebSource> {
-    return this._paginate<WebSource>(this.path(knowledgeBaseId));
+  list(knowledgeBaseId: string, params?: PaginationParams): PageIterator<WebSource> {
+    return this._paginate<WebSource>(this.path(knowledgeBaseId), params);
   }
 
   /** Register a start URL to crawl (re-adding a registered URL returns the existing source). */
@@ -31,7 +31,7 @@ export class KBWebSources extends BaseResource {
   }
 
   /** Delete a crawl source and the pages it discovered. */
-  delete(knowledgeBaseId: string, webSourceId: string): Promise<void> {
-    return this._del<void>(this.path(knowledgeBaseId, webSourceId));
+  delete(knowledgeBaseId: string, webSourceId: string): Promise<DeleteResult> {
+    return this._del<DeleteResult>(this.path(knowledgeBaseId, webSourceId));
   }
 }

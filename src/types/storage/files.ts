@@ -16,12 +16,3 @@ export interface FileObject {
 export interface FileUploadParams {
   metadata?: Record<string, unknown>;
 }
-
-export interface FileListParams {
-  page?: number;
-  limit?: number;
-  /** Sort field, e.g. `-createdAt`. */
-  sort?: string;
-  /** Filter on any file field, e.g. `{ 'metadata.type': 'source', mimetype: 'application/pdf' }`. */
-  [filter: string]: string | number | undefined;
-}

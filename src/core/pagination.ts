@@ -107,8 +107,8 @@ export function defaultExtractor<T>(body: unknown): PageResponse<T> {
   let hasMore: boolean | undefined;
   if (total !== undefined && page !== undefined && limit !== undefined) {
     hasMore = page * limit < total;
-  } else if (obj.hasMore !== undefined) {
-    hasMore = obj.hasMore as boolean;
+  } else if ((obj.hasMore ?? obj.has_more) !== undefined) {
+    hasMore = (obj.hasMore ?? obj.has_more) as boolean;
   }
 
   return { data, total, page, limit, hasMore };

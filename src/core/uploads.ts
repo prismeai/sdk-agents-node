@@ -34,7 +34,9 @@ async function toBlob(input: FileInput, options: FileUploadOptions): Promise<Blo
   const contentType = options.contentType ?? 'application/octet-stream';
 
   if (input instanceof Blob) {
-    return input;
+    return options.contentType && options.contentType !== input.type
+      ? new Blob([input], { type: options.contentType })
+      : input;
   }
 
   if (typeof input === 'string') {
