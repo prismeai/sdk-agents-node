@@ -72,34 +72,6 @@ describe('Files', () => {
     files = new Files(http, WS_ID);
   });
 
-  describe('list', () => {
-    it('pages through bare-array responses until a short page', async () => {
-      const fullPage = Array.from({ length: 20 }, (_, i) => ({ id: `f${i}` }));
-      http.request
-        .mockResolvedValueOnce(fullPage)
-        .mockResolvedValueOnce([{ id: 'f20' }]);
-
-      const items = await files.list({ 'metadata.type': 'source' }).toArray();
-
-      expect(items).toHaveLength(21);
-      expect(http.request).toHaveBeenCalledTimes(2);
-      expect(http.request.mock.calls[0][0]).toMatchObject({
-        method: 'GET',
-        path: FILES,
-        query: { 'metadata.type': 'source', page: 0, limit: 20 },
-      });
-      expect(http.request.mock.calls[1][0].query.page).toBe(1);
-    });
-
-    it('starts from the page and limit the caller gives', async () => {
-      http.request.mockResolvedValueOnce([]);
-
-      await files.list({ page: 3, limit: 5 }).toArray();
-
-      expect(http.request.mock.calls[0][0].query).toEqual({ page: 3, limit: 5 });
-    });
-  });
-
   describe('upload', () => {
     it('posts a private multipart upload and returns the first file', async () => {
       http.post.mockResolvedValueOnce([{ id: 'f1', name: 'test.txt' }]);
@@ -145,6 +117,17 @@ describe('Files', () => {
       expect(fd.has('metadata')).toBe(false);
     });
 
+    it('keeps a Blob\'s own type and sets the type given for an untyped Blob', async () => {
+      http.post.mockResolvedValue([{ id: 'f4' }]);
+
+      await files.upload(new Blob(['%PDF'], { type: 'application/pdf' }), { filename: 'report' });
+      await files.upload(new Blob(['x']), { filename: 'notes', contentType: 'text/markdown' });
+
+      const typeSent = (call: number) => ((http.post.mock.calls[call][1] as FormData).get('file') as File).type;
+      expect(typeSent(0)).toBe('application/pdf');
+      expect(typeSent(1)).toBe('text/markdown');
+    });
+
     it('throws when the upload returns no file', async () => {
       http.post.mockResolvedValueOnce([]);
 
@@ -165,9 +148,12 @@ describe('Files', () => {
 
   describe('delete', () => {
     it('goes through the storage route, which checks the uploader and that no document uses it', async () => {
-      await files.delete('f1');
+      http.delete.mockResolvedValueOnce({ deleted: true, file_purged: true, purge_reason: 'DELETED' });
+
+      const result = await files.delete('f1');
 
       expect(http.delete).toHaveBeenCalledWith(`/workspaces/slug:${WS_ID}/webhooks/v1/files/f1`, undefined);
+      expect(result.file_purged).toBe(true);
     });
   });
 
@@ -438,10 +424,13 @@ describe('KBDocuments', () => {
     expect(http.patch).toHaveBeenCalledWith(`${DOCS}/vsf_1`, { tags: { a: 1 } });
   });
 
-  it('delete calls DELETE on the document path', async () => {
-    await docs.delete('vs_1', 'vsf_1');
+  it('delete calls DELETE on the document path and returns whether the file went with it', async () => {
+    http.delete.mockResolvedValueOnce({ id: 'vsf_1', deleted: true, file_purged: false, purge_reason: 'STILL_REFERENCED' });
+
+    const result = await docs.delete('vs_1', 'vsf_1');
 
     expect(http.delete).toHaveBeenCalledWith(`${DOCS}/vsf_1`, undefined);
+    expect(result.purge_reason).toBe('STILL_REFERENCED');
   });
 
   it('chunks paginates the chunks path', async () => {
@@ -458,6 +447,14 @@ describe('KBDocuments', () => {
 
     expect(http.request.mock.calls[0][0].path).toBe(`${DOCS}/vsf_1/chunks`);
     expect(chunks).toEqual([{ chunk_index: 0, text: 'chunk' }]);
+  });
+
+  it('chunks starts from the page and limit the caller gives', async () => {
+    http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 2, limit: 50, has_more: false });
+
+    await docs.chunks('vs_1', 'vsf_1', { page: 2, limit: 50 }).toArray();
+
+    expect(http.request.mock.calls[0][0].query).toEqual({ page: 2, limit: 50 });
   });
 
   it('sourceUrl calls GET on the document source_url path', async () => {
@@ -490,9 +487,10 @@ describe('KBAccess', () => {
   it('list paginates the access path', async () => {
     http.request.mockResolvedValueOnce({ object: 'list', data: [], total: 0, page: 1, limit: 20, has_more: false });
 
-    await access.list('vs_1').toArray();
+    await access.list('vs_1', { limit: 100 }).toArray();
 
     expect(http.request.mock.calls[0][0].path).toBe(ACCESS);
+    expect(http.request.mock.calls[0][0].query.limit).toBe(100);
   });
 
   it('grant calls POST on the access path', async () => {

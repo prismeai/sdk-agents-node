@@ -2,9 +2,9 @@ import { basename } from 'node:path';
 import { BaseResource } from '../../core/base-resource.js';
 import { PrismeAIError } from '../../core/errors.js';
 import type { HttpClient } from '../../core/http-client.js';
-import type { PageIterator } from '../../core/pagination.js';
 import { toFormData, mimeFromFilename, type FileInput, type FileUploadOptions } from '../../core/uploads.js';
-import type { FileObject, FileUploadParams, FileListParams } from '../../types/storage/files.js';
+import type { FileObject, FileUploadParams } from '../../types/storage/files.js';
+import type { DeleteResult } from '../../types/storage/knowledge-bases.js';
 
 /**
  * Native files of the storage workspace. Attach an uploaded file to a knowledge base
@@ -22,21 +22,13 @@ export class Files extends BaseResource {
     return ['/workspaces', `slug:${this.workspaceId}`, 'files', ...segments].join('/');
   }
 
-  /** List the workspace's files. Requires management rights on the storage workspace. */
-  list(params?: FileListParams): PageIterator<FileObject> {
-    // The endpoint returns a bare array and counts pages from 0: keep paging while pages come back full.
-    return this._paginate<FileObject>(this.path(), params, { page: params?.page ?? 0 }, (body) => ({
-      data: body as FileObject[],
-    }));
-  }
-
   /**
-   * Upload a private file. The filename (the path's basename by default) sets the type
-   * when `contentType` is not given: pass one for in-memory content.
+   * Upload a private file. Without `contentType`, a Blob's own type is used, else the filename's
+   * extension (the path's basename by default).
    */
   async upload(file: FileInput, params?: FileUploadParams & FileUploadOptions): Promise<FileObject> {
     const filename = params?.filename ?? defaultFilename(file);
-    const contentType = params?.contentType ?? mimeFromFilename(filename);
+    const contentType = params?.contentType || (file instanceof Blob && file.type) || mimeFromFilename(filename);
     const formData = await toFormData('file', file, { filename, contentType });
     formData.append('public', 'false');
     if (params?.metadata) {
@@ -56,11 +48,11 @@ export class Files extends BaseResource {
   }
 
   /**
-   * Delete a file you uploaded that no document uses (409 while one does: delete the document
-   * from its knowledge base instead, which also releases the file).
+   * Delete a file you uploaded that no document uses, e.g. after `documents.add` refused it.
+   * 409 while a document uses it: delete the document instead, which deletes the file with it.
    */
-  delete(fileId: string): Promise<void> {
-    return this._del<void>(this.buildPath(this.workspaceId, 'files', fileId));
+  delete(fileId: string): Promise<DeleteResult> {
+    return this._del<DeleteResult>(this.buildPath(this.workspaceId, 'files', fileId));
   }
 
   /** Download a file's content. Returns the raw Response for streaming. */

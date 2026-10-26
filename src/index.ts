@@ -97,7 +97,6 @@ export type { Timestamp, LocalizedText } from './types/common.js';
 export type {
   FileObject,
   FileUploadParams,
-  FileListParams,
 } from './types/storage/files.js';
 
 export type {
@@ -113,6 +112,8 @@ export type {
   KnowledgeBaseSearchResponse,
   KnowledgeBaseReindexParams,
   KnowledgeBaseReindexResult,
+  KnowledgeBaseDeletion,
+  DeleteResult,
   KnowledgeBaseDocument,
   DocumentSourceType,
   DocumentStatus,

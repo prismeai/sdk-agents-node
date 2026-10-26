@@ -11,6 +11,7 @@ import type {
   KnowledgeBaseSearchResponse,
   KnowledgeBaseReindexParams,
   KnowledgeBaseReindexResult,
+  KnowledgeBaseDeletion,
 } from '../../../types/storage/knowledge-bases.js';
 import { KBDocuments } from './documents.js';
 import { KBAccess } from './access.js';
@@ -55,9 +56,12 @@ export class KnowledgeBases extends BaseResource {
     return this._patch<KnowledgeBase>(this.path(knowledgeBaseId), params);
   }
 
-  /** Delete a knowledge base and its documents (uploaded files are kept). */
-  delete(knowledgeBaseId: string): Promise<void> {
-    return this._del<void>(this.path(knowledgeBaseId));
+  /**
+   * Delete a knowledge base in the background, with its documents. Each document's uploaded file is
+   * deleted too when no other document uses it and the document's owner uploaded it.
+   */
+  delete(knowledgeBaseId: string): Promise<KnowledgeBaseDeletion> {
+    return this._del<KnowledgeBaseDeletion>(this.path(knowledgeBaseId));
   }
 
   /** Semantic search over a knowledge base. */

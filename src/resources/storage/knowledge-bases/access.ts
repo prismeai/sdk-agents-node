@@ -1,11 +1,12 @@
 import { BaseResource } from '../../../core/base-resource.js';
 import type { HttpClient } from '../../../core/http-client.js';
-import type { PageIterator } from '../../../core/pagination.js';
+import type { PageIterator, PaginationParams } from '../../../core/pagination.js';
 import type {
   KnowledgeBaseAccessBinding,
   KnowledgeBaseAccessGrantParams,
   KnowledgeBaseAccessUpdateParams,
   PrincipalType,
+  DeleteResult,
 } from '../../../types/storage/knowledge-bases.js';
 
 export class KBAccess extends BaseResource {
@@ -21,8 +22,8 @@ export class KBAccess extends BaseResource {
   }
 
   /** List access bindings of a knowledge base. */
-  list(knowledgeBaseId: string): PageIterator<KnowledgeBaseAccessBinding> {
-    return this._paginate<KnowledgeBaseAccessBinding>(this.path(knowledgeBaseId));
+  list(knowledgeBaseId: string, params?: PaginationParams): PageIterator<KnowledgeBaseAccessBinding> {
+    return this._paginate<KnowledgeBaseAccessBinding>(this.path(knowledgeBaseId), params);
   }
 
   /** Grant a role to a principal (re-granting updates the role). */
@@ -44,7 +45,7 @@ export class KBAccess extends BaseResource {
   }
 
   /** Revoke a principal's access. */
-  revoke(knowledgeBaseId: string, principalType: PrincipalType, principalId: string): Promise<void> {
-    return this._del<void>(this.path(knowledgeBaseId, principalType, principalId));
+  revoke(knowledgeBaseId: string, principalType: PrincipalType, principalId: string): Promise<DeleteResult> {
+    return this._del<DeleteResult>(this.path(knowledgeBaseId, principalType, principalId));
   }
 }
