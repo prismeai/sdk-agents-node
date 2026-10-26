@@ -21,10 +21,10 @@ const client = new PrismeAI({
 ## Authentication
 
 ```typescript
-// API Key (recommended for server-side)
+// API Key (recommended for server-side Agent Factory calls)
 const client = new PrismeAI({ apiKey: 'sk-...' });
 
-// Bearer Token (for user-scoped access)
+// Bearer Token (for user-scoped access; required by storage)
 const client = new PrismeAI({ bearerToken: 'eyJ...' });
 
 // Self-hosted instance
@@ -35,6 +35,8 @@ const client = new PrismeAI({
 ```
 
 Environment variables `PRISMEAI_API_KEY` and `PRISMEAI_BEARER_TOKEN` are also supported.
+
+Storage resources act on behalf of a user, so call them with a `bearerToken`: with an `apiKey` alone, a knowledge base gets no owner and an uploaded file no uploader, which keeps it from ever being deleted through `files.delete`.
 
 ## Usage Examples
 
@@ -185,7 +187,7 @@ await client.tasks.cancel('agent-id', 'task-id');
 
 ### Files (Storage)
 
-Files are uploaded privately to the storage workspace and belong to the authenticated user, so upload with a `bearerToken`: an `apiKey` alone does not identify a user.
+Files are uploaded privately to the storage workspace and belong to the authenticated user.
 
 ```typescript
 // Upload a file (path, Buffer, Blob, Uint8Array or ReadableStream)
@@ -200,7 +202,9 @@ const response = await client.storage.files.download(file.id);
 const bytes = Buffer.from(await response.arrayBuffer());
 ```
 
-`files.delete` deletes a file you uploaded that no document uses; it answers 409 while a document does. To remove an indexed file, delete its document from the knowledge base. `files.list` requires edit rights on the storage workspace.
+`files.delete` deletes a file you uploaded that no document uses; it answers 409 while a document does. Call it when `documents.add` refuses an upload, or the file stays behind. To remove an indexed file, delete its document from the knowledge base.
+
+Deleting a document, or a whole knowledge base, deletes each uploaded file with it when no other document uses the file and the document's owner uploaded it. `documents.delete` returns `file_purged` and `purge_reason` to tell.
 
 ### Knowledge Bases (Storage)
 
@@ -257,7 +261,9 @@ await client.storage.knowledgeBases.update(kb.id, { crawl_settings: { periodicit
 
 ### Migrating from 0.2
 
-0.3 moves storage resources to the Knowledge Bases API. `client.storage.vectorStores` is removed and `client.storage.files` now targets the platform's native files API.
+0.3 moves storage resources to the Knowledge Bases API. `client.storage.vectorStores` is removed and `client.storage.files` now targets the platform's native files API. `files.delete` needs a platform release that includes its storage route: an older one answers 404.
+
+Existing vector store ids (`vs_...`) are valid knowledge base ids. File ids are not document ids: list a knowledge base's documents with `documents.list` to get the `vsf_...` ids that `documents.get/update/delete/reindex` take.
 
 | 0.2 | 0.3 |
 |-----|-----|
@@ -266,7 +272,7 @@ await client.storage.knowledgeBases.update(kb.id, { crawl_settings: { periodicit
 | `storage.vectorStores.reindex(id)` | `storage.knowledgeBases.reindex(id, params?)` |
 | `storage.vectorStores.crawlStatus(id)` | `storage.knowledgeBases.get(id, { include: 'processing' })` → `.processing` |
 | `storage.vectorStores.recrawl(id)` | Removed: register crawl sources with `knowledgeBases.webSources` and set `crawl_settings.periodicity`; `reindex` re-fetches known pages |
-| `storage.vectorStores.files.list/add/update/delete/reindex` | `storage.knowledgeBases.documents.list/add/update/delete/reindex` (plus `get`) |
+| `storage.vectorStores.files.list/add/update/delete/reindex(id, fileId)` | `storage.knowledgeBases.documents.list/add/update/delete/reindex(id, documentId)` (plus `get`) |
 | `storage.vectorStores.files.chunks(id, fileId)` → `Promise<T[]>` | `storage.knowledgeBases.documents.chunks(id, documentId)` → paginated iterator |
 | `storage.vectorStores.access.list/grant/revoke` | `storage.knowledgeBases.access.list/grant/revoke` |
 | `storage.vectorStores.access.update(id, accessId, params)` | `storage.knowledgeBases.access.update(id, principalType, principalId, { role })` |
@@ -283,7 +289,7 @@ Request and response fields follow the API's snake_case names, and timestamps ar
 
 - `upload()` no longer accepts `name`; use `filename`. Uploaded files are private.
 - `FileObject.mimeType` is now `mimetype`, and the object carries `path` and `workspaceId`.
-- `list()` accepts `sort` and field filters (e.g. `{ 'metadata.team': 'support' }`) instead of `search`.
+- `list()` is removed: the files API lists every user's files and only to the storage workspace's owners. List a knowledge base's documents instead.
 
 ### Pagination
 
@@ -303,6 +309,8 @@ console.log(firstPage.data, firstPage.total);
 // Collect all into array
 const allAgents = await client.agents.list().toArray();
 ```
+
+Storage lists cap `limit` at 100.
 
 ### Error Handling
 
@@ -336,7 +344,7 @@ try {
 |--------|------|---------|-------------|
 | `apiKey` | `string` | `PRISMEAI_API_KEY` env | API key for authentication |
 | `bearerToken` | `string` | `PRISMEAI_BEARER_TOKEN` env | Bearer token for auth |
-| `baseURL` | `string` | `https://api.prisme.ai/v2` | API base URL (for self-hosted) |
+| `baseURL` | `string` | `https://api.studio.prisme.ai/v2` | API base URL (for self-hosted) |
 | `timeout` | `number` | `60000` | Request timeout in ms |
 | `maxRetries` | `number` | `2` | Max retries on 429/5xx |
 
