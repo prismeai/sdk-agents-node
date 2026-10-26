@@ -33,6 +33,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Load the build with require and import
+        run: |
+          node -e "require('./dist/index.js')"
+          node --input-type=module -e "await import('./dist/index.mjs')"
       - uses: actions/upload-artifact@v4
         with:
           name: dist

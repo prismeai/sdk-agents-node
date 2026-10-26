@@ -2,9 +2,12 @@ import { PrismeAI } from '../dist/index.mjs';
 import { writeFileSync, unlinkSync } from 'node:fs';
 
 // ── Config ──────────────────────────────────────────────────────
+// Storage needs a user, so a bearer token wins over an API key.
 const client = new PrismeAI({
-  apiKey: process.env.PRISMEAI_API_KEY,
-  environment: process.env.PRISMEAI_ENV || 'sandbox',
+  ...(process.env.PRISMEAI_BEARER_TOKEN
+    ? { bearerToken: process.env.PRISMEAI_BEARER_TOKEN }
+    : { apiKey: process.env.PRISMEAI_API_KEY }),
+  baseURL: process.env.PRISMEAI_BASE_URL,
 });
 
 let agentId;
@@ -618,11 +621,11 @@ async function testFiles() {
     log('Downloaded', { size: text.length, content: text.slice(0, 100) });
   });
 
-  await testSkip('files.list', 'requires management rights on the storage workspace');
   await test('files.delete', async () => {
     // Its own file: the knowledge base tests attach uploadedFileId.
     const file = await client.storage.files.upload(Buffer.from('SDK delete test'), { filename: 'sdk-delete.txt' });
-    await client.storage.files.delete(file.id);
+    const result = await client.storage.files.delete(file.id);
+    if (!result.file_purged) throw new Error(`File kept: ${result.purge_reason}`);
     log('Deleted', { id: file.id });
   });
 }
@@ -873,7 +876,7 @@ async function cleanup() {
 async function main() {
   console.log('🚀 Prisme.ai SDK — Full Feature Test');
   console.log('═'.repeat(50));
-  console.log(`Environment: ${process.env.PRISMEAI_ENV || 'sandbox'}`);
+  console.log(`API: ${process.env.PRISMEAI_BASE_URL || 'default'}`);
   console.log(`API Key: ${process.env.PRISMEAI_API_KEY ? '✅ set' : '❌ missing!'}`);
   console.log('═'.repeat(50));
 
